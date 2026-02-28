@@ -1,0 +1,55 @@
+name: Deploy Sapnity Website to Hostinger
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  extract-and-deploy:
+    runs-on: ubuntu-latest
+    name: Extract ZIP & Deploy to Hostinger via FTP
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Extract public_html ZIP if present
+        run: |
+          ZIP_FILE=$(find . -maxdepth 1 -name "*.zip" | head -1)
+          if [ -n "$ZIP_FILE" ]; then
+            echo "Found ZIP: $ZIP_FILE"
+            unzip -o "$ZIP_FILE" -d extracted_site
+            # If it extracted into a subfolder, move contents up
+            INNER=$(find extracted_site -mindepth 1 -maxdepth 1 -type d | head -1)
+            if [ -n "$INNER" ]; then
+              cp -r "$INNER"/* extracted_site/ 2>/dev/null || true
+              rm -rf "$INNER"
+            fi
+            echo "Extraction complete. Files:"
+            ls extracted_site/
+          else
+            echo "No ZIP found - using repo root as site source"
+            mkdir -p extracted_site
+            # Copy all files except .github and any zip files to extracted_site
+            rsync -av --exclude='.github' --exclude='*.zip' --exclude='extracted_site' . extracted_site/
+          fi
+
+      - name: Deploy to Hostinger via FTP
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.5
+        with:
+          server: ${{ secrets.FTP_SERVER }}
+          username: ${{ secrets.FTP_USERNAME }}
+          password: ${{ secrets.FTP_PASSWORD }}
+          local-dir: ./extracted_site/
+          server-dir: /public_html/
+          dangerous-clean-slate: false
+          exclude: |
+            **/.git*
+            **/.git*/**
+            **/node_modules/**
+            **/*.zip
+
+      - name: Deployment Complete
+        run: echo "Sapnity.com has been successfully deployed to Hostinger!"
